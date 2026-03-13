@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Забіги, результати</title>
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<script src="parse.js?v=1"></script>
+	<script>
+
+
+const params = new URLSearchParams(window.location.search);
+const csvURL = params.get("csv"); // це твоє посилання на CSV
+	async function loadCSV(csvURL){
+
+	  const container = document.getElementById('heatsData');
+
+	  try {
+
+		const res = await fetch(csvURL + "&t=" + Date.now());
+
+		if (!res.ok){
+		  throw new Error("Не вдалося завантажити CSV");
+		}
+
+		const text = await res.text();
+
+		displayCSV(text);
+
+	  } catch(err){
+
+		container.className = 'empty';
+		container.textContent = 'Помилка завантаження CSV: ' + err.message;
+
+		console.error(err);
+
+	  }
+
+	}
+
+	function displayCSV(data){
+
+	  const rows = parseCSV(data);
+	  const container = document.getElementById('heatsData');
+
+	  if (!rows.length){
+		container.className = 'empty';
+		container.textContent = 'Файл порожній';
+		return;
+	  }
+
+	  container.classList.remove('empty');
+	  container.innerHTML = '';
+
+	  const maxCols = rows.reduce((m,r)=>Math.max(m,r.length),0);
+
+	  rows.forEach((row, idx)=>{
+
+		const firstCellTrim = (row[0] || '').trim();
+
+		// ===== НАЗВА ВИДУ =====
+		if (
+		  firstCellTrim &&
+		  !/^Забіг\s*/i.test(firstCellTrim) &&
+		  idx !== 0 &&
+		  row.slice(1).every(c => !c)
+		){
+
+		  const eventTitleDiv = document.createElement('div');
+		  eventTitleDiv.className = 'sheet-row event-title';
+
+		  const span = document.createElement('span');
+		  span.className = 'event-title-text';
+		  span.textContent = firstCellTrim;
+
+		  eventTitleDiv.appendChild(span);
+		  container.appendChild(eventTitleDiv);
+		  return;
+		}
+
+		// ===== БАНЕР ЗАБІГУ =====
+		if (/^Забіг\s*/i.test(firstCellTrim)){
+
+		  const bannerDiv = document.createElement('div');
+		  bannerDiv.className = 'sheet-row event-row';
+
+		  const span = document.createElement('span');
+		  span.className = 'event';
+		  span.textContent = firstCellTrim;
+
+		  bannerDiv.appendChild(span);
+		  container.appendChild(bannerDiv);
+		  return;
+		}
+
+		// ===== ЗВИЧАЙНИЙ РЯДОК =====
+
+		const rowDiv = document.createElement('div');
+		rowDiv.className = 'sheet-row';
+
+		if (idx === 0) rowDiv.classList.add('header');
+
+		for (let c = 0; c < maxCols; c++){
+
+		  const cellDiv = document.createElement('div');
+		  cellDiv.className = 'sheet-cell';
+
+		  cellDiv.textContent = row[c] !== undefined ? row[c] : '';
+
+		  rowDiv.appendChild(cellDiv);
+
+		}
+
+		container.appendChild(rowDiv);
+
+	  });
+
+	}
+
+	// ===== автоматичне завантаження CSV =====
+	document.addEventListener("DOMContentLoaded", () => {
+
+	  if (!csvURL){
+
+		const container = document.getElementById('heatsData');
+		container.className = 'empty';
+		container.textContent = "CSV не вказано";
+
+		return;
+
+	  }
+
+	  loadCSV(csvURL);
+
+	});
+	
+	</script>
+  <body>
+    <div id="heatsData">
+	<div id="heatsData" class="empty"><h1 style="color: var(--text)">Завантаження...</ht></div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Результати</title>
+  <link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+  <!-- Контейнер для селекту днів -->
+  <div id="controls"></div>
+  <!-- Контейнер для таблиці -->
+  <div id="heatsData"></div>
+
+<script src="parse.js?v=5"></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+
+// csvs (для багатьох днів) або csv (для одного дня)
+const csvsParam = params.get("csvs");
+const singleCsv = params.get("csv");
+const startParam = params.get("start");
+const endParam = params.get("end");
+
+let EVENT_START = startParam ? new Date(startParam) : null;
+let EVENT_END = endParam ? new Date(endParam) : null;
+
+let events = [];
+
+// Додаємо cache-buster
+function addTimestamp(url) {
+  if (!url) return url;
+  return url + (url.includes('?') ? '&' : '?') + 't=' + Date.now();
+}
+
+// Завантажити CSV та рендерити
+async function loadAndRenderCSV(csvURL, startDate, endDate) {
+  if(!csvURL) return;
+  if(startDate) EVENT_START = new Date(startDate);
+  if(endDate) EVENT_END = new Date(endDate);
+
+  try {
+    const res = await fetch(addTimestamp(csvURL));
+    if(!res.ok) throw new Error("Не вдалося завантажити CSV");
+    const text = await res.text();
+    const rows = parseCSV(text);
+
+    // Підтримка структури: час, вид, категорія, коло, старт, res1,res2,...
+    events = rows.map(cols => ({
+      time: cols[0] || "",
+      name: cols[1] || "",
+      categ: cols[2] || "",
+      round: cols[3] || "",
+      start: cols[4] || "",
+      res: cols.slice(5).filter(Boolean) // масив посилань
+    }));
+
+    render();
+  } catch(err) {
+    const container = document.getElementById("heatsData");
+    if(container) {
+      container.className = 'empty';
+      container.textContent = 'Помилка завантаження CSV: ' + err.message;
+    }
+    console.error(err);
+  }
+}
+
+// Розпарсити параметр csvs: "label|url|start|end;label2|url|start|end;..."
+function parseCsvsParam(str) {
+  if(!str) return [];
+  const parts = str.split(';').map(s=>s.trim()).filter(Boolean);
+  return parts.map(p=>{
+    const arr = p.split('|').map(s=>s.trim());
+    return {
+      label: arr[0] || 'День',
+      url: arr[1],
+      start: arr[2] || null,
+      end: arr[3] || null
+    };
+  });
+}
+
+// Створити select для днів
+function buildDaysSelector(list) {
+  const heats = document.getElementById("heatsData");
+  if(!heats) return;
+
+  let controls = document.getElementById("controls");
+  if(!controls){
+    controls = document.createElement("div");
+    controls.id = "controls";
+    controls.style.margin = "12px 0";
+    heats.parentNode.insertBefore(controls, heats);
+  } else {
+    controls.innerHTML = "";
+  }
+
+  const label = document.createElement("label");
+  label.textContent = ""; //day select
+  label.style.marginRight = "8px";
+
+  const select = document.createElement("select");
+  select.id = "daySelect";
+select.className = "daySelect"; // або залишаємо #daySelect у CSS
+
+  list.forEach((item, idx)=>{
+    const opt = document.createElement("option");
+    opt.value = idx; // зберігаємо індекс
+    opt.textContent = item.label || `День ${idx+1}`;
+    select.appendChild(opt);
+  });
+
+  controls.appendChild(label);
+  controls.appendChild(select);
+
+  // Обробник зміни дня
+  select.addEventListener("change", (e)=>{
+    const idx = Number(e.target.value);
+    const day = list[idx];
+    if(day) loadAndRenderCSV(day.url, day.start, day.end);
+  });
+
+  // Автовибір першого дня
+  if(list.length) {
+    select.selectedIndex = 0;
+    loadAndRenderCSV(list[0].url, list[0].start, list[0].end);
+  }
+}
+
+// Підсвітка часу
+function updateTimeColors() {
+  const container = document.getElementById("heatsData");
+  if(!container || !EVENT_START) return;
+
+  const rows = Array.from(container.getElementsByClassName("sheet-row")).filter(r=>!r.classList.contains("header"));
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const compDay = new Date(EVENT_START.getFullYear(), EVENT_START.getMonth(), EVENT_START.getDate());
+
+  if(today < compDay) return;
+
+  if(today > compDay){
+    rows.forEach(r=>{
+      r.classList.remove("now_s","future_s","long_future_s");
+      r.classList.add("past_s");
+    });
+    return;
+  }
+
+  const eventsArr = [];
+
+  rows.forEach(row=>{
+    const timeCell = row.querySelector(".time-cell");
+    if(!timeCell) return;
+    const parts = timeCell.textContent.trim().split(":").map(Number);
+    if(parts.length<2 || isNaN(parts[0]) || isNaN(parts[1])) return;
+    const [h,m] = parts;
+    const eventTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m);
+    eventsArr.push({row, time: eventTime});
+  });
+
+  for(let i=0;i<eventsArr.length;i++){
+    const current = eventsArr[i];
+    let nextTime = null;
+    for(let j=i+1;j<eventsArr.length;j++){
+      if(eventsArr[j].time.getTime()!==current.time.getTime()){
+        nextTime = eventsArr[j].time;
+        break;
+      }
+    }
+
+    const diffHours = (current.time - now)/(1000*60*60);
+    current.row.classList.remove("past_s","now_s","future_s","long_future_s");
+
+    if(nextTime && now>=current.time && now<nextTime) current.row.classList.add("now_s");
+    else if(!nextTime && now>=current.time) current.row.classList.add("past_s");
+    else if(diffHours>2) current.row.classList.add("long_future_s");
+    else if(diffHours>0) current.row.classList.add("future_s");
+    else current.row.classList.add("past_s");
+  }
+}
+
+// Рендер таблиці
+function render() {
+  const container = document.getElementById("heatsData");
+  if (!container) return;
+
+  container.innerHTML = ""; // очистка
+
+  const fragment = document.createDocumentFragment();
+
+  // Заголовки
+  const rowDiv = document.createElement('div');
+  rowDiv.className = 'sheet-row header';
+  ["Час","Вид","Категорія","Коло","Старт","Результати"].forEach(text=>{
+    const cell = document.createElement('div');
+    cell.className='sheet-cell';
+    cell.textContent=text;
+    rowDiv.appendChild(cell);
+  });
+  fragment.appendChild(rowDiv);
+
+  // Події
+  events.forEach(event=>{
+    const row = document.createElement("div");
+    row.className = "sheet-row";
+
+    const cells = [
+      {text:event.time, isTime:true},
+      {text:event.name},
+      {text:event.categ},
+      {text:event.round},
+      {html:event.start?`<button onclick="window.open('data.html?csv=${encodeURIComponent(event.res)}')">Старт</button>`:""},
+      {html:event.res?`<button onclick="window.open('data.html?csv=${encodeURIComponent(event.res)}')">Результати</button>`:""}
+    ];
+
+    cells.forEach(c=>{
+      const cellDiv = document.createElement('div');
+      cellDiv.className='sheet-cell';
+      if(c.isTime) cellDiv.classList.add("time-cell");
+      if(c.html) cellDiv.innerHTML=c.html;
+      else cellDiv.textContent=c.text;
+      row.appendChild(cellDiv);
+    });
+
+    fragment.appendChild(row);
+  });
+
+  container.appendChild(fragment);
+
+  updateTimeColors(); // після того як DOM уже створений
+}
+
+// Ініціалізація
+document.addEventListener("DOMContentLoaded", ()=>{
+  if(csvsParam){
+    const list = parseCsvsParam(csvsParam);
+    if(!list.length){
+      const container = document.getElementById('heatsData');
+      container.className='empty';
+      container.textContent="CSV список порожній";
+      return;
+    }
+    buildDaysSelector(list);
+  } else if(singleCsv){
+    loadAndRenderCSV(singleCsv, startParam, endParam);
+  } else {
+    const container = document.getElementById('heatsData');
+    container.className='empty';
+    container.textContent="Не вказано CSV";
+  }
+
+  setInterval(updateTimeColors, 60000);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="google-site-verification" content="zK_OmZPKRvslQSDArAHUBL--gurxgO3Vtm2dV0qlTAg" />
+  <title>Календар ФЛАІФ</title>
+  <link rel="stylesheet" href="style.css?v=1">
+</head>
+<script src="parse.js?v=5"></script>
+  <script>
+  let events = [];
+async function loadCSV() {
+  const response = await fetch("https://docs.google.com/spreadsheets/d/e/2PACX-1vRbxFsk7Xj8Ef5T_wuZvChiA7qtGNFtx1jIIG1_vDmofWyCKhT9-I_fV7iaSB8e6H0IoLwUgubIiOQ9/pub?gid=0&single=true&output=csv");
+  const text = await response.text();
+
+  const rows = parseCSV(text); // пропускаємо хедер
+
+  events = rows.map(cols => ({
+  status: cols[0] || "",
+  start: cols[1] || "",
+  end: cols[2] || "",
+  name: cols[3] || "",
+  location: cols[4] || "",
+  reg: cols[5] || "",
+  sch: cols[6] || "",
+  res: cols[7] || ""
+}));
+}
+function parseDate(str) {
+  const [d, m, y] = str.split(".");
+  return new Date(y, m - 1, d);
+}
+function getStatus(event) {
+
+  if (event.status === "cancelled" || event.status === "скасовано") {
+    return "cancelled";
+  }
+  if (event.status === "planned" || event.status === "заплановано") {
+    return "planned";
+  }
+
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
+  const start = parseDate(event.start);
+  const end = parseDate(event.end);
+
+  if (end < today) return "finished";
+  if (start <= today && end >= today) return "now";
+  if (start > today) return "future";
+
+}
+function render() {
+  const container = document.getElementById("sheetData");
+  container.innerHTML = "";
+  const rowDiv = document.createElement('div');
+rowDiv.className = 'sheet-row';
+rowDiv.classList.add('header');
+
+// Масив з назвою колонки та відповідним стилем
+const headers = [
+  ["Статус", "status"],
+  ["Початок", "date"],
+  ["Кінець", "date"],
+  ["Назва", "name"],
+  ["Локація", "location"],
+  ["Регл", "buttons"],
+  ["Розкл", "buttons"],
+  ["Рез", "location"]
+];
+
+headers.forEach(([text, styleClass]) => {
+  const cell = document.createElement('div');
+  cell.className = `sheet-cell ${styleClass}`; // додаємо клас стилю
+  cell.textContent = text;
+  rowDiv.appendChild(cell);
+});
+  container.appendChild(rowDiv);
+
+  events.forEach(event => {
+    const status = getStatus(event);
+    const row = document.createElement("div");
+    row.className = "sheet-row";
+
+    row.innerHTML = `
+      <div class="sheet-cell status">
+        <span class="${status}">
+          ${status === "cancelled" ? "Скасовано" : status === "finished" ? "Завершено" : status === "planned" ? "Заплановано" : status === "now" ? "Проводиться" : "Відбудеться"}
+        </span>
+      </div>
+
+      <div class="sheet-cell date">${event.start}</div>
+      <div class="sheet-cell date">${event.end}</div>
+      <div class="sheet-cell name">${event.name}</div>
+      <div class="sheet-cell location">${event.location}</div>
+
+      <div class="sheet-cell buttons">
+        ${event.reg ? `<button onclick="window.open('${event.reg}')">Регл</button>` : ""}
+      </div>
+
+      <div class="sheet-cell buttons">
+        ${event.sch ? `<button onclick="window.open('${event.sch}')">Розкл</button>` : ""}
+      </div>
+
+     <div class="sheet-cell buttons">
+		  ${event.res ? `
+		<button onclick="window.open('schedule.html?csvs=${encodeURIComponent(event.res)}&start=${encodeURIComponent(event.start)}&end=${encodeURIComponent(event.end)}')">
+			Рез
+		</button>` : ""}
+	 </div>
+    `;
+
+    container.appendChild(row);
+  });
+}
+
+async function init() {
+
+  await loadCSV();
+  render();
+
+  //setInterval(render, 1000);
+
+}
+
+document.addEventListener("DOMContentLoaded", init);
+  </script>
+  <body>
+	<div id="site-header">
+	  <div class="header-inner">
+		<div class="logo">
+		  Календар ФЛАУ
+		  <!--<img src="flaif_logo.png" alt="logo">-->
+		</div>
+		<div class="header-buttons">
+		  <button onclick="window.open('register.html', '_blank')">Реєстрація на змагання</button>
+		  <button onclick="window.open('register_admin.html', '_blank')">Admin</button>
+		</div>
+	  </div>
+	</div>
+	<hr>
+    <div id="sheetData">
+  </div>
+  </body>
+</html>

@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Адмін – керування подіями</title>
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+
+<body>
+
+<h2>Створити подію</h2>
+
+<label>Назва події</label><br>
+<input id="eventName" placeholder="Назва події"><br><br>
+
+<label>Види (через | ) — напр. 100м | 200м | Стрибок в довжину</label><br>
+<textarea id="disciplines" placeholder="100м | 200м | Стрибок в довжину"></textarea><br><br>
+
+<button type="button" onclick="createNewEvent()">Створити</button>
+<label id="state"></label>
+
+<hr>
+
+<h2>Керування подіями</h2>
+
+<label>Оберіть подію</label><br>
+<select id="adminEventSelect"></select><br><br>
+
+<button id="closeBtn" onclick="closeEvent()">Закрити заявку</button>
+<button onclick="drawEvent()">Сортувати</button>
+
+<script>
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyuPX291dfPSi0wft10dgGRGJcBtN7wAkOrB4DOpo9AcYPbTAtrKUa7BqKWvkv0VBBKsQ/exec";
+
+let eventsCache = [];
+/* ================================
+   СТВОРЕННЯ ПОДІЇ
+================================ */
+
+async function createNewEvent(){
+
+  const st = document.getElementById("state");
+  st.textContent = "Створення...";
+
+  const name = document.getElementById("eventName").value.trim();
+  const discText = document.getElementById("disciplines").value.trim();
+
+  if(!name){
+    alert("Введіть назву події");
+    return;
+  }
+
+  if(!discText){
+    alert("Введіть хоча б один вид");
+    return;
+  }
+
+  const params = new URLSearchParams();
+  params.append("action","createEvent");
+  params.append("eventName",name);
+  params.append("disciplines",discText);
+  params.append("client","ajax");
+  try{
+    const resp = await fetch(WEBAPP_URL,{
+      method:"POST",
+      body:params
+    });
+    const reply = await resp.json();
+    if(reply.ok){
+      alert("Подію створено");
+      document.getElementById("eventName").value="";
+      document.getElementById("disciplines").value="";
+      loadEventsAdmin();
+    }else{
+
+      alert("Помилка: "+reply.msg);
+    }
+  }catch(err){
+
+    alert("Помилка: "+err);
+  }
+  st.textContent="";
+}
+/* ================================
+   ЗАВАНТАЖЕННЯ ПОДІЙ
+================================ */
+async function loadEventsAdmin(){
+  const resp = await fetch(WEBAPP_URL);
+  const data = await resp.json();
+  eventsCache = data.events || [];
+  const sel = document.getElementById("adminEventSelect");
+  sel.innerHTML="";
+  eventsCache.forEach(ev=>{
+
+    const o=document.createElement("option");
+    o.value = ev.value;
+    const status = ev.status || "OPEN";
+    o.textContent = ev.label + " (" + status + ")";
+    o.dataset.status = status;
+    sel.appendChild(o);
+  });
+  updateButtons();
+}
+/* ================================
+   ОНОВЛЕННЯ КНОПОК
+================================ */
+function updateButtons(){
+  const sel = document.getElementById("adminEventSelect");
+  if(!sel.value) return;
+  const status = sel.selectedOptions[0].dataset.status;
+  const closeBtn = document.getElementById("closeBtn");
+  if(status === "CLOSED"){
+    closeBtn.disabled = true;
+  }else{
+    closeBtn.disabled = false;
+  }
+}
+document.getElementById("adminEventSelect").addEventListener("change",updateButtons);
+/* ================================
+   ЗАКРИТИ ЗАЯВКУ
+================================ */
+async function closeEvent(){
+  const ev = document.getElementById("adminEventSelect").value;
+  if(!confirm("Закрити заявку для "+ev+" ?")) return;
+  const params = new URLSearchParams();
+  params.append("action","closeEvent");
+  params.append("eventName",ev);
+  params.append("client","ajax");
+  const resp = await fetch(WEBAPP_URL,{
+    method:"POST",
+    body:params
+  });
+
+  const reply = await resp.json();
+  if(reply.ok){
+    alert("Заявку закрито");
+    loadEventsAdmin();
+  }else{
+
+    alert(reply.msg);
+  }
+}
+async function drawEvent(){
+
+  const ev = document.getElementById("adminEventSelect").value;
+
+  if(!confirm("Зробити жеребкування для "+ev+" ?")) return;
+
+  const params = new URLSearchParams();
+
+  params.append("action","drawEvent");
+  params.append("eventName",ev);
+  params.append("client","ajax");
+
+  const resp = await fetch(WEBAPP_URL,{
+    method:"POST",
+    body:params
+  });
+
+  const reply = await resp.json();
+
+  if(reply.ok){
+
+    alert("Жеребкування виконано");
+
+  }else{
+
+    alert(reply.msg);
+
+  }
+
+}
+loadEventsAdmin();
+</script>
+</body>
+</html>

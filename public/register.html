@@ -1,0 +1,703 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Реєстрація спортсменів</title>
+  <link rel="stylesheet" href="style.css?v=1">
+  <style>
+  /* ===== ОСНОВА ===== */
+
+body{
+  font-family: "Segoe UI", Roboto, Arial, sans-serif;
+  background:#f4f6fb;
+  margin:0;
+  padding:20px;
+  color:#2c3e50;
+}
+
+h2{
+  margin-bottom:15px;
+  font-weight:600;
+}
+
+/* ===== INPUT / SELECT / TEXTAREA ===== */
+
+input,
+select,
+textarea,
+button{
+  padding:10px 12px;
+  border:1px solid #d8dee6;
+  border-radius:8px;
+  font-size:14px;
+  background:white;
+  transition:all .12s ease;
+  outline:none;
+  box-sizing:border-box;
+}
+
+input::placeholder{
+  color:#a0a8b3;
+}
+
+/* ===== BUTTONS ===== */
+
+button{
+  cursor:pointer;
+  background:#2f6df6;
+  color:white;
+  border: none;
+  font-weight:500;
+  border-radius:8px;
+}
+button.small-btn{
+  padding:6px 8px;
+  font-size:13px;
+}
+button.ghost{
+  background:#eef2f7;
+  color:#344054;
+  border:1px solid #d8dee6;
+}
+button.red{
+  background:#ff4d4d;
+}
+
+/* ===== ATHLETE ROW ===== */
+
+.athlete-row{
+  display:grid;
+  grid-template-columns:
+  110px 80px 140px 120px 170px 120px 140px 100px 120px 120px auto;
+  gap:8px;
+  align-items:center;
+  padding:8px;
+  border-radius:8px;
+}
+.athlete-row select,
+.athlete-row input{
+  width:100%;
+}
+
+.athlete-row:hover{
+  background:#f4f7ff;
+}
+
+/* quick date actions */
+.quick-date-actions{
+  margin-top:6px;
+  display:flex;
+  gap:6px;
+}
+.quick-date-actions button{
+  padding:6px 8px;
+  font-size:13px;
+  border-radius:6px;
+}
+
+/* ===== РОЗМІРИ ПОЛІВ ===== */
+
+.small{ width:50px; }
+.medium{ width:100px; }
+.large{ width:150px; }
+
+/* ===== КОНТЕЙНЕР СПОРТСМЕНІВ ===== */
+
+#athletesContainer{
+  margin-top:15px;
+  margin-bottom:15px;
+}
+
+/* ===== МОБІЛЬНА АДАПТАЦІЯ ===== */
+
+@media (max-width:900px){
+
+  .athlete-row{
+    grid-template-columns:
+    1fr 1fr;
+  }
+
+  .athlete-row input,
+  .athlete-row select{
+    width:100%;
+  }
+
+  .athlete-actions{
+    grid-column:1 / -1;
+  }
+
+}
+
+/* ===== МАЛІ ТЕЛЕФОНИ ===== */
+
+@media (max-width:500px){
+
+  body{
+    padding:10px;
+  }
+
+  button{
+    width:100%;
+    margin-top:5px;
+  }
+
+}
+  </style>
+</head>
+<body>
+  <h2>Реєстрація спортсменів</h2>
+
+  <label>Доступні події:</label><br>
+  <select id="eventName" disabled>
+    <option>Завантаження подій...</option>
+  </select><br><br>
+
+  <button id="addAthleteBtn" disabled>Додати спортсмена</button>
+  <button id="removeAllBtn" disabled style="margin-left:8px;" class="ghost">Очистити всі</button>
+
+  <div id="athletesContainer"></div>
+
+  <input type="hidden" name="action" value="register">
+  <input type="hidden" name="eventName" id="reg_eventName">
+  <input type="hidden" name="athletes" id="reg_athletes">
+  <button type="button" onclick="submitAll()" style="margin-top:12px;">Відправити заявку</button>
+  <label id="state" style="margin-left:12px;"></label>
+
+<script>
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyuPX291dfPSi0wft10dgGRGJcBtN7wAkOrB4DOpo9AcYPbTAtrKUa7BqKWvkv0VBBKsQ/exec";
+
+let __events = [];
+let __disciplinesMap = {};
+
+/* ===== ЗАВАНТАЖЕННЯ ПОДІЙ (CORS) ===== */
+
+async function fetchEvents(){
+  try{
+    const resp = await fetch(WEBAPP_URL,{
+      method:"GET",
+      mode:"cors"
+    });
+    const payload = await resp.json();
+    loadEventsData(payload);
+  }catch(err){
+    console.error("Помилка завантаження подій",err);
+    alert("Не вдалося завантажити події");
+  }
+}
+
+/* ===== ЗАПОВНЕННЯ SELECT ПОДІЙ ===== */
+
+function loadEventsData(payload){
+  __events = payload.events || [];
+  __disciplinesMap = payload.disciplinesMap || {};
+
+  const eventSelect = document.getElementById("eventName");
+  eventSelect.innerHTML = "";
+
+  __events.forEach(ev=>{
+    const o = document.createElement("option");
+    o.value = ev.value;
+    o.textContent = ev.label;
+    eventSelect.appendChild(o);
+  });
+
+  eventSelect.disabled = false;
+  document.getElementById("addAthleteBtn").disabled = false;
+  document.getElementById("removeAllBtn").disabled = false;
+
+  if(__events.length){
+    eventSelect.value = __events[0].value;
+  }
+
+  eventSelect.addEventListener("change", ()=>{ clearAthletes(); });
+}
+
+/* ===== ЗАПУСК ЗАВАНТАЖЕННЯ ===== */
+fetchEvents();
+
+/* ===== ДАНІ СПОРТСМЕНІВ ===== */
+
+const athletes = [];
+let __athleteId = 1;
+function nextId(){ return __athleteId++; }
+const ranks = ["Б/Р","IIIю","IIю","Iю","III","II","I","КМС","МС","МСМК"];
+
+const container = document.getElementById("athletesContainer");
+const addBtn = document.getElementById("addAthleteBtn");
+const removeAllBtn = document.getElementById("removeAllBtn");
+
+/* ===== КНОПКИ ===== */
+
+addBtn.addEventListener("click", ()=>{
+  const ev = document.getElementById("eventName").value;
+  if(!ev){
+    alert("Оберіть подію перед додаванням спортсмена.");
+    return;
+  }
+  addAthleteRow();
+});
+
+removeAllBtn.addEventListener("click", ()=>{
+  if(!athletes.length) return;
+  if(!confirm("Видалити всі незбережені заявки?")) return;
+  clearAthletes();
+});
+
+/* ===== ПАРСЕР РЕЗУЛЬТАТУ =====
+Підтримує:
+ - ss,cc  (7,20 або 7.20 або 7/20)
+ - mm:ss,cc або mm:ss.cc
+ - "1м10см", "1m10s", "1'10\"" тощо
+ - числа з десятковими (70.5 -> 01:10,50)
+Повертає відформатований рядок або null.
+*/
+function parseResultInput(raw){
+  if(!raw && raw!==0) return "";
+  let s = String(raw).trim().toLowerCase();
+  if(!s) return "";
+  // Replace common separators
+  s = s.replace(/\s+/g,'');
+  s = s.replace(',', '.');
+  s = s.replace('/', '.'); // treat 7/20 as 7.20
+  // Patterns:
+  // 1) mm:ss(.frac)
+  const mmss = s.match(/^(\d{1,2}):(\d{1,2})(?:[.,](\d{1,3}))?$/);
+  if(mmss){
+    let mm = parseInt(mmss[1],10);
+    let ss = parseInt(mmss[2],10);
+    let frac = mmss[3] ? Number('0.' + mmss[3]) : 0;
+    if(ss>=60 || mm<0 || ss<0) return null;
+    let totalCentis = Math.round((mm*60 + ss + frac) * 100);
+    return formatCentis(totalCentis);
+  }
+  // 2) forms like 1m10s, 1м10см, 1'10"
+  let m_s = s.match(/^(\d{1,3})\s*[mм]?\s*['mм]?\s*(\d{1,2})(?:[scс]|$)?(?:[.,](\d{1,3}))?$/);
+  // Try patterns like 1m10s or 1м10см
+  if(m_s && m_s[2] !== undefined){
+    let mm = parseInt(m_s[1],10);
+    let ss = parseInt(m_s[2],10);
+    if(ss>=60 || mm<0 || ss<0) return null;
+    let frac = m_s[3] ? Number('0.' + m_s[3]) : 0;
+    let totalCentis = Math.round((mm*60 + ss + frac) * 100);
+    return formatCentis(totalCentis);
+  }
+  // 3) plain seconds with optional decimal: 70.5 or 7.20
+  const secs = s.match(/^(\d{1,4})(?:\.(\d{1,3}))?$/);
+  if(secs){
+    let whole = parseInt(secs[1],10);
+    let frac = secs[2] ? Number('0.' + secs[2]) : 0;
+    if(whole<0) return null;
+    let totalCentis = Math.round((whole + frac) * 100);
+    return formatCentis(totalCentis);
+  }
+  // If nothing matched => invalid
+  return null;
+}
+
+function formatCentis(totalCentis){
+  // totalCentis: integer centiseconds
+  if(totalCentis < 0) return null;
+  // compute mm:ss,cc if >= 60s
+  const totalSeconds = Math.floor(totalCentis / 100);
+  let cs = totalCentis % 100;
+  let mm = Math.floor(totalSeconds / 60);
+  let ss = totalSeconds % 60;
+  // handle carry if cs == 100
+  if(cs === 100){ cs = 0; ss += 1; if(ss===60){ ss=0; mm+=1; } }
+  const pad2 = n => n.toString().padStart(2,'0');
+  if(mm>0){
+    // mm:ss,cc
+    return `${pad2(mm)}:${pad2(ss)},${pad2(cs)}`;
+  }else{
+    // ss,cc
+    return `${pad2(ss)},${pad2(cs)}`;
+  }
+}
+
+/* ===== ОЧИЩЕННЯ ===== */
+
+function clearAthletes(){
+  athletes.length=0;
+  container.innerHTML="";
+}
+
+/* ===== ДОДАВАННЯ РЯДКА СПОРТСМЕНА ===== */
+
+function addAthleteRow(prefill){
+  const id = nextId();
+
+  const rowObj = {
+    id,
+    gender:"Чоловік",
+    startNumber:"",
+    surname:"",
+    name:"",
+    dob:"",
+    club:"",
+    coach:"",
+    declaredResult:"",
+    rank:ranks[0],
+    discipline:""
+  };
+
+  if(prefill) Object.assign(rowObj,prefill);
+
+  athletes.push(rowObj);
+
+  const el = document.createElement("div");
+  el.className = "athlete-row";
+  el.id = "ath_row_"+id;
+
+  const currentEvent = document.getElementById("eventName").value;
+  const discList = __disciplinesMap[currentEvent] || [];
+
+  // visible DOB text input + hidden native date input + quick buttons
+  el.innerHTML = `
+
+  <select data-field="gender" class="small">
+    <option value="Чоловік">Чоловік</option>
+    <option value="Жінка">Жінка</option>
+  </select>
+
+  <input data-field="startNumber" placeholder="Старт №" class="small" inputmode="numeric" pattern="[0-9]*">
+
+  <input data-field="surname" placeholder="Прізвище" class="medium">
+  <input data-field="name" placeholder="Ім'я" class="medium">
+
+  <div style="display:flex;flex-direction:column;">
+    <div style="display:flex;gap:6px;">
+      <input data-field="dob" placeholder="дд.мм.рррр" class="large" autocomplete="off">
+      <button type="button" class="small-btn ghost" data-action="openDatePicker">📅</button>
+    </div>
+    <div class="quick-date-actions" style="display:none;" data-quick-actions>
+      <button type="button" class="small-btn ghost" data-action="today">Сьогодні</button>
+      <button type="button" class="small-btn ghost" data-action="tomorrow">Завтра</button>
+      <button type="button" class="small-btn ghost" data-action="yesterday">Вчора</button>
+    </div>
+    <input type="date" style="display:none;" data-hidden-date>
+  </div>
+
+  <input data-field="club" placeholder="Клуб" class="medium">
+  <input data-field="coach" placeholder="Тренер" class="medium">
+
+  <input data-field="declaredResult" placeholder="Результат" class="small">
+
+  <select data-field="rank" class="medium"></select>
+  <select data-field="discipline" class="medium"></select>
+
+  <div class="athlete-actions">
+    <button data-action="duplicate" type="button" class="ghost small-btn">Дублювати</button>
+    <button data-action="remove" type="button" class="red small-btn" style="margin-left:6px;">Видалити</button>
+  </div>
+
+  `;
+
+  // fill rank options
+  const selRank = el.querySelector('select[data-field="rank"]');
+  ranks.forEach(r=>{
+    const o=document.createElement("option");
+    o.value=r;
+    o.textContent=r;
+    selRank.appendChild(o);
+  });
+
+  // fill disciplines
+  const selDisc = el.querySelector('select[data-field="discipline"]');
+  if(discList.length===0){
+    const o=document.createElement("option");
+    o.value="";
+    o.textContent="(Немає видів)";
+    selDisc.appendChild(o);
+    selDisc.disabled=true;
+  }else{
+    discList.forEach(d=>{
+      const o=document.createElement("option");
+      o.value=d;
+      o.textContent=d;
+      selDisc.appendChild(o);
+    });
+    selDisc.value=discList[0];
+    rowObj.discipline = discList[0];
+  }
+
+  // set initial values from rowObj (prefill)
+  el.querySelectorAll("input,select").forEach(input=>{
+    const field = input.dataset.field;
+    if(!field) return;
+    if(rowObj[field] !== undefined && rowObj[field] !== null && rowObj[field] !== ""){
+      // for dob, if stored as ISO yyyy-mm-dd, show as dd.mm.yyyy
+      if(field === 'dob'){
+        let v = rowObj[field];
+        if(v && /^\d{4}-\d{2}-\d{2}$/.test(v)){
+          input.value = isoToDisplay(v);
+        }else{
+          input.value = String(v);
+        }
+      }else{
+        input.value = rowObj[field];
+      }
+    }
+  });
+
+  // add listeners
+  el.querySelectorAll("input,select").forEach(input=>{
+    const field = input.dataset.field;
+    // input event for startNumber (digits only)
+    if(field==='startNumber'){
+      input.addEventListener("input", e=>{
+        // keep only digits
+        const normalized = e.target.value.replace(/\D+/g,'');
+        if(e.target.value !== normalized) e.target.value = normalized;
+        rowObj[field] = normalized;
+      });
+      input.addEventListener("blur", e=>{
+        if(e.target.value === ""){
+          // allow empty startNumber but if user typed invalid stuff, we already cleared
+          // optionally: notify
+        }
+      });
+      return;
+    }
+
+    // declaredResult validation & normalization on blur
+    if(field==='declaredResult'){
+      input.addEventListener("blur", e=>{
+        const raw = e.target.value.trim();
+        if(!raw){
+          rowObj[field] = "";
+          return;
+        }
+        const parsed = parseResultInput(raw);
+        if(parsed === null){
+          alert("Невірний формат результату, використовуйте XX,XX або XX:XX,XX");
+          e.target.value = "";
+          rowObj[field] = "";
+          return;
+        }
+        e.target.value = parsed;
+        rowObj[field] = parsed;
+      });
+      // also update on input live (no strict enforcement)
+      input.addEventListener("input", e=>{
+        rowObj[field] = e.target.value;
+      });
+      return;
+    }
+
+    // dob special
+    if(field==='dob'){
+      const textInput = input;
+      const hiddenDate = el.querySelector('input[data-hidden-date]');
+      const quickActions = el.querySelector('[data-quick-actions]');
+      const openDateBtn = el.querySelector('[data-action="openDatePicker"]');
+
+      // auto-format as dd.mm.yyyy while typing
+      textInput.addEventListener("input", e=>{
+        const v = e.target.value.replace(/[^\d]/g,'').slice(0,8); // ddmmyyyy
+        let formatted = v;
+        if(v.length>=3 && v.length<=4){
+          formatted = v.slice(0,2)+'.'+v.slice(2);
+        }else if(v.length>=5 && v.length<=8){
+          formatted = v.slice(0,2)+'.'+v.slice(2,4)+'.'+v.slice(4);
+        }
+        e.target.value = formatted;
+        // store temporarily in display form; keep ISO in rowObj on blur/when valid
+        rowObj[field] = formatted;
+      });
+
+      // open native date picker via hidden input
+      openDateBtn.addEventListener("click", ()=>{
+        hiddenDate.click();
+      });
+
+      // when native picker changes, fill display
+      hiddenDate.addEventListener("change", (ev)=>{
+        if(hiddenDate.value){
+          textInput.value = isoToDisplay(hiddenDate.value);
+          rowObj[field] = hiddenDate.value; // store ISO for sending
+        }
+      });
+
+      // quick actions show on focus
+      textInput.addEventListener("focus", ()=>{
+        quickActions.style.display = "flex";
+      });
+      textInput.addEventListener("blur", (ev)=>{
+        setTimeout(()=>{ quickActions.style.display = "none"; }, 150);
+        // try to normalize dd.mm.yyyy -> ISO if possible
+        const val = textInput.value.trim();
+        if(!val){ rowObj[field] = ""; return; }
+        const m = val.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+        if(m){
+          const dd = m[1], mm = m[2], yyyy = m[3];
+          const iso = `${yyyy}-${mm}-${dd}`;
+          // basic validity check
+          const d = new Date(iso);
+          if(isNaN(d.getTime())){
+            alert("Невірно вказана дата");
+            textInput.value = "";
+            rowObj[field] = "";
+          }else{
+            rowObj[field] = iso;
+            hiddenDate.value = iso;
+          }
+        }else{
+          // allow empty or partial, but don't keep invalid text
+          // if user wrote only dd.mm -> assume current year
+          const m2 = val.match(/^(\d{2})\.(\d{2})$/);
+          if(m2){
+            const dd = m2[1], mm = m2[2];
+            const yyyy = new Date().getFullYear();
+            const iso = `${yyyy}-${mm}-${dd}`;
+            const d = new Date(iso);
+            if(!isNaN(d.getTime())){
+              rowObj[field] = iso;
+              textInput.value = isoToDisplay(iso);
+              hiddenDate.value = iso;
+            }else{
+              alert("Невірно вказана дата");
+              textInput.value = "";
+              rowObj[field] = "";
+            }
+          }else{
+            // leave as-is (could be empty)
+            if(!val) rowObj[field]="";
+          }
+        }
+      });
+
+      // quick buttons
+      quickActions.querySelector('[data-action="today"]').addEventListener("click", ()=>{
+        const iso = new Date().toISOString().slice(0,10);
+        textInput.value = isoToDisplay(iso);
+        hiddenDate.value = iso;
+        rowObj[field] = iso;
+        quickActions.style.display='none';
+      });
+      quickActions.querySelector('[data-action="tomorrow"]').addEventListener("click", ()=>{
+        const d = new Date();
+        d.setDate(d.getDate()+1);
+        const iso = d.toISOString().slice(0,10);
+        textInput.value = isoToDisplay(iso);
+        hiddenDate.value = iso;
+        rowObj[field] = iso;
+        quickActions.style.display='none';
+      });
+      quickActions.querySelector('[data-action="yesterday"]').addEventListener("click", ()=>{
+        const d = new Date();
+        d.setDate(d.getDate()-1);
+        const iso = d.toISOString().slice(0,10);
+        textInput.value = isoToDisplay(iso);
+        hiddenDate.value = iso;
+        rowObj[field] = iso;
+        quickActions.style.display='none';
+      });
+
+      return;
+    }
+
+    // default input/select sync
+    input.addEventListener("input", e=>{
+      rowObj[field] = e.target.value;
+    });
+    input.addEventListener("change", e=>{
+      rowObj[field] = e.target.value;
+    });
+  });
+
+  // wire duplicate & remove buttons
+  el.querySelector('[data-action="remove"]').addEventListener("click", ()=>{
+    if(!confirm("Видалити спортсмена?")) return;
+    const idx = athletes.findIndex(a=>a.id===id);
+    if(idx>=0) athletes.splice(idx,1);
+    el.remove();
+  });
+
+  el.querySelector('[data-action="duplicate"]').addEventListener("click", ()=>{
+    // create prefill from current rowObj (clone)
+    const copy = Object.assign({}, rowObj);
+    // remove id so addAthleteRow assigns new id
+    delete copy.id;
+    // if dob is ISO or display, keep ISO if present
+    addAthleteRow(copy);
+  });
+
+  container.appendChild(el);
+}
+
+/* convert ISO yyyy-mm-dd -> dd.mm.yyyy */
+function isoToDisplay(iso){
+  if(!iso) return "";
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m) return iso;
+  return `${m[3]}.${m[2]}.${m[1]}`;
+}
+
+/* ===== ПІДГОТОВКА ДАНИХ ===== */
+
+function collectAthletesForSend(){
+  return athletes.map(a=>({
+    gender:a.gender||"",
+    startNumber:a.startNumber||"",
+    surname:a.surname||"",
+    name:a.name||"",
+    dob:a.dob||"", // ISO if available
+    club:a.club||"",
+    coach:a.coach||"",
+    declaredResult:a.declaredResult||"",
+    rank:a.rank||ranks[0],
+    discipline:a.discipline||""
+  })).filter(a=>a.surname && a.name);
+}
+
+/* ===== ВІДПРАВКА (CORS) ===== */
+
+async function submitAll(){
+  if(athletes.length===0){
+    alert("Немає спортсменів");
+    return;
+  }
+  const ev=document.getElementById("eventName").value;
+  if(!ev){ alert("Оберіть подію"); return; }
+
+  const list=collectAthletesForSend();
+  if(list.length===0){ alert("Заповніть хоча б одного спортсмена"); return; }
+
+  for(const a of list){
+    if(!a.discipline){
+      alert("Кожен спортсмен повинен мати вид");
+      return;
+    }
+  }
+
+  const params=new URLSearchParams();
+  params.append("action","register");
+  params.append("eventName",ev);
+  params.append("athletes",JSON.stringify(list));
+  params.append("client","ajax");
+  const st = document.getElementById("state");
+  st.textContent = "Публікація заявки...";
+  try{
+    const resp=await fetch(WEBAPP_URL,{
+      method:"POST",
+      body:params,
+      mode:"cors"
+    });
+    const reply=await resp.json();
+    if(reply.ok){
+      alert("Заявку відправлено");
+      clearAthletes();
+    }else{
+      alert("Помилка: "+reply.msg);
+    }
+  }catch(err){
+    console.error(err);
+    alert("Помилка відправки");
+  }
+  st.textContent = "";
+}
+
+</script>
+</body>
+</html>
