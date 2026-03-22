@@ -1,7 +1,7 @@
 # calendar-flaif
 
 Website:
-https://calendar-flaif.web.app
+https://uaflaif.web.app/
 
 Features
 - Interactive calendar of upcoming competitions
